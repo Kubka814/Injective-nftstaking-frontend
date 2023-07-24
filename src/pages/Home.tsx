@@ -73,7 +73,7 @@ export default function Home() {
           label={"Staked"}
           />
         <InfoCard
-          value={1000000}
+          value={config.totalAirdrop}
           label={"Total"}
           isUsd={true}
           />

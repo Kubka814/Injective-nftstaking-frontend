@@ -31,9 +31,15 @@ export default function InfoCard ({
   }
 
   const kFormatter = (num: number) => {
-    let res = Math.abs(num) > 999 ? (Math.sign(num) * parseFloat((Math.abs(num) / 1000).toFixed(2))).toString() + 'k' : Math.sign(num) * parseInt(Math.abs(num).toFixed(0));
-    if (isUsd) return `$${res}`
-    return res
+    const suffixes = ["", "K", "M", "B", "T"]
+    let suffixIndex  = 0
+    num = parseInt(Math.abs(num).toFixed(0))
+    while (num >= 1000 && suffixIndex  < suffixes.length - 1) {
+        num = parseFloat((Math.abs(num) / 1000).toFixed(2))
+        suffixIndex ++
+    }
+    if (isUsd) return `$${num}${suffixes[suffixIndex]}`;
+    return `${num}${suffixes[suffixIndex]}`;
   }
 
   return (
