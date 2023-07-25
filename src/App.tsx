@@ -8,11 +8,11 @@ import Admin from "./pages/Admin"
 
 import "./App.css"
 import "react-toastify/dist/ReactToastify.min.css";
-import { useSigningClient } from "./context/CosmwasmContext";
+import { useCosmWasmContext } from "./context/CosmwasmContext";
 
 function App() {
 
-  const {loading} = useSigningClient()
+  const {loading} = useCosmWasmContext()
   
   return (
   <>

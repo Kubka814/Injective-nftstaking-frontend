@@ -13,16 +13,18 @@ import TITLE_BG from "../assets/images/top-title.png";
 import BTN_PREV from "../assets/icons/BtnPrev";
 import BTN_NEXT from "../assets/icons/BtnNext";
 
-import { useSigningClient } from "../context/CosmwasmContext";
+import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl, copyClipboard } from "../utils/utils";
 import { BigNumber } from "@injectivelabs/utils";
 import { toast } from "react-toastify";
+
+import LOADING from "../assets/images/loading.gif"
 
 export default function Main() {
   const navigate = useNavigate()
 
   const { 
-    isAdmin,
+    owner,
     injectiveAddress, 
     nativeBalance,
     disconnect, 
@@ -36,10 +38,11 @@ export default function Main() {
     executeClaim,
     getStakedNfts,
     stakedNfts,
-  } = useSigningClient()
+    loadingNfts,
+    loadingStaked,
+  } = useCosmWasmContext()
 
   const handleDisconnect = () => {
-    console.log("Disconnectting to Keplr Wallet...")
     disconnect();
     navigate("/")
   }
@@ -47,12 +50,13 @@ export default function Main() {
   useEffect(() => {
     if (injectiveAddress.length === 0) {
         navigate("/")
+        return
     }
     getConfig()
     getTotalEarned()
-    getBalances()
+    getBalances(true)
     getStakedNfts()
-  }, [])
+  }, [injectiveAddress, ])
 
   const [selectIds, setSelectIds] = useState<Array<string>>([])
   const insertSelectId = (id:string) => {
@@ -165,7 +169,7 @@ export default function Main() {
             {showUserInfo(injectiveAddress, nativeBalance)}
             </span>
           <div className="aliens-font3 ml-5 text-16" onClick={handleDisconnect}>Disconnect</div>
-          {isAdmin && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
+          {(injectiveAddress == owner) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
         </div>
       </section>
 
@@ -185,19 +189,25 @@ export default function Main() {
             <span className="flex-grow">{accountNfts.length} NFTs in your wallet</span>
             <span className="font-bold hidden md:block">{selectIds.length} NFTs selected</span>
           </div>
-          <div className="wallet-nfts flex flex-wrap mt-2">
-            <NFTCard
-              type={BUY_NFT}/>
-            {accountNfts.map((nft:any) => (
-              <NFTCard
-                key={nft.token_id}
-                data={nft}
-                type={NORMAL_NFT}
-                onClick={handleClickNft}
-                isSelected={selectIds.indexOf(nft.token_id) >= 0}/>
-            ))}
-            {(accountNfts.length%3)>0 && (<NFTCard type={EMPTY_NFT}/>)}
-            {(accountNfts.length%3)>1 && (<NFTCard type={EMPTY_NFT}/>)}
+          <div className={("wallet-nfts flex flex-wrap mt-2" + (loadingNfts?" loading":""))}>
+            {loadingNfts ? (
+              <img src={LOADING}/>
+            ) : 
+              <>
+                <NFTCard
+                  type={BUY_NFT}/>
+                {accountNfts.map((nft:any) => (
+                  <NFTCard
+                    key={nft.token_id}
+                    data={nft}
+                    type={NORMAL_NFT}
+                    onClick={handleClickNft}
+                    isSelected={selectIds.indexOf(nft.token_id) >= 0}/>
+                ))}
+                {(accountNfts.length%3)>0 && (<NFTCard type={EMPTY_NFT}/>)}
+                {(accountNfts.length%3)>1 && (<NFTCard type={EMPTY_NFT}/>)}
+              </>
+            }
           </div>
 
           <div className="aliens-divider w-1/2 lg:hidden"></div>
@@ -215,25 +225,31 @@ export default function Main() {
           </div>
 
           <div className="staked-nfts flex flex-row justify-center items-center gap-2 mt-5">
-            <div className="btn-prev" onClick={handleBtnPrev}><BTN_PREV/></div>
-            <AliceCarousel
-              autoWidth
-              disableDotsControls
-              disableButtonsControls
-              mouseTracking={false}
-              ref={carouselRef} >
-              {stakedNfts.map((nft: any) => (
-                <div className="staked-nft-items mx-2" key={nft.token_id}>
-                  <NFTCard 
-                    type={NORMAL_NFT} 
-                    data={nft} 
-                    onClick={handleClickStaked} 
-                    isSelected={selectStakeIds.indexOf(nft.token_id) >= 0}
-                    />
-                </div>
-              ))}
-            </AliceCarousel>
-            <div className="btn-next" onClick={handleBtnNext}><BTN_NEXT/></div>
+            {loadingStaked ? (
+              <img src={LOADING}/>
+            ) : 
+              <>
+                <div className="btn-prev" onClick={handleBtnPrev}><BTN_PREV/></div>
+                <AliceCarousel
+                  autoWidth
+                  disableDotsControls
+                  disableButtonsControls
+                  mouseTracking={false}
+                  ref={carouselRef} >
+                  {stakedNfts.map((nft: any) => (
+                    <div className="staked-nft-items mx-2" key={nft.token_id}>
+                      <NFTCard 
+                        type={NORMAL_NFT} 
+                        data={nft} 
+                        onClick={handleClickStaked} 
+                        isSelected={selectStakeIds.indexOf(nft.token_id) >= 0}
+                        />
+                    </div>
+                  ))}
+                </AliceCarousel>
+                <div className="btn-next" onClick={handleBtnNext}><BTN_NEXT/></div>
+              </>
+            }
           </div>
           
           <Link to="/details" className="aliens-font3 lg:hidden mt-20">See Details</Link>

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import AirdropProgress from "../components/AirdropProgress";
 import TITLE_BG from "../assets/images/top-title.png"
 
-import { useSigningClient } from "../context/CosmwasmContext";
+import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl, copyClipboard } from "../utils/utils";
 import AliensBtn from "../components/AliensBtn";
 import { BigNumber } from "@injectivelabs/utils";
@@ -13,21 +13,24 @@ import { toast } from "react-toastify";
 export default function Admin() {
   const navigate = useNavigate()
 
-  const airdropAmount = useRef<HTMLInputElement>(null)
-  const chargeAirdrop = useRef<HTMLInputElement>(null)
-  const duration = useRef<HTMLInputElement>(null)
-  const feeAddr = useRef<HTMLInputElement>(null)
-  const locktimeFee = useRef<HTMLInputElement>(null)
-  const collectionAddr = useRef<HTMLInputElement>(null)
-  const ownerAddr = useRef<HTMLInputElement>(null)
-  const withdraw = useRef<HTMLInputElement>(null)
+  const ref_airdropAmount = useRef<HTMLInputElement>(null)
+  const ref_chargeAirdrop = useRef<HTMLInputElement>(null)
+  const ref_duration = useRef<HTMLInputElement>(null)
+  const ref_feeAddr = useRef<HTMLInputElement>(null)
+  const ref_locktimeFee = useRef<HTMLInputElement>(null)
+  const ref_collectionAddr = useRef<HTMLInputElement>(null)
+  const ref_ownerAddr = useRef<HTMLInputElement>(null)
+  const ref_withdraw = useRef<HTMLInputElement>(null)
 
   const { 
-    isAdmin,
     injectiveAddress, 
-    nativeBalance,
     disconnect, 
-    config,
+    nativeBalance,
+    duration,
+    locktimeFee,
+    collection,
+    owner,
+    feeAddr,
     getBalances,
     getConfig,
     getAirdropableAmount,
@@ -39,30 +42,29 @@ export default function Admin() {
     executeAirdrop,
     executeAirdropRestart,
     executeWithdraw
-  } = useSigningClient()
+  } = useCosmWasmContext()
 
   const handleDisconnect = () => {
-    console.log("Disconnectting to Keplr Wallet...")
     disconnect();
     navigate("/")
   }
 
   useEffect(() => {
-    if (injectiveAddress.length === 0 || !isAdmin)
+    if (injectiveAddress.length === 0 || (injectiveAddress != owner))
       navigate("/")
-    getBalances()
+    getBalances(false)
     getConfig()
     getAirdropableAmount()
     getLockNftCount()
   }, [])
 
   useEffect(() => {
-    if (duration.current !== null) duration.current.value = (config as any).duration
-    if (locktimeFee.current !== null) locktimeFee.current.value = (config as any).locktimeFee
-    if (collectionAddr.current !== null) collectionAddr.current.value = (config as any).collection
-    if (ownerAddr.current !== null) ownerAddr.current.value = (config as any).owner
-    if (feeAddr.current !== null) feeAddr.current.value = (config as any).feeAddr
-  }, [config, ])
+    if (ref_duration.current !== null) ref_duration.current.value = duration.toString()
+    if (ref_locktimeFee.current !== null) ref_locktimeFee.current.value = locktimeFee.toString()
+    if (ref_collectionAddr.current !== null) ref_collectionAddr.current.value = collection
+    if (ref_ownerAddr.current !== null) ref_ownerAddr.current.value = owner
+    if (ref_feeAddr.current !== null) ref_feeAddr.current.value = feeAddr
+  }, [duration, locktimeFee, collection, owner, feeAddr])
 
   const showUserInfo = (address: string, balance: BigNumber) => {
     let res = address.substring(0,12) + "..." + address.substring(address.length - 6, address.length)
@@ -71,7 +73,7 @@ export default function Admin() {
   }
 
   const handleAirdrop = () => {
-    const amount = airdropAmount.current?.value
+    const amount = ref_airdropAmount.current?.value
     if (amount && parseInt(amount))
       executeAirdrop(amount)
     else
@@ -79,7 +81,7 @@ export default function Admin() {
   }
 
   const handleChargeAirdrop = () => {
-    const amount = chargeAirdrop.current?.value
+    const amount = ref_chargeAirdrop.current?.value
     if (amount && parseInt(amount))
       executeCharge(amount)
     else
@@ -87,7 +89,7 @@ export default function Admin() {
   }
 
   const handleWithdraw = () => {
-    const amount = withdraw.current?.value
+    const amount = ref_withdraw.current?.value
     if (amount && parseInt(amount))
       executeWithdraw(amount)
     else
@@ -96,11 +98,11 @@ export default function Admin() {
 
   const handleUpdateConfig = () => {
     let nftInfo = {
-      duration: duration.current?.value,
-      owner: ownerAddr.current?.value,
-      feeAddr: feeAddr.current?.value,
-      locktimeFee: locktimeFee.current?.value,
-      collectionAddr: collectionAddr.current?.value
+      duration: ref_duration.current?.value,
+      owner: ref_ownerAddr.current?.value,
+      feeAddr: ref_feeAddr.current?.value,
+      locktimeFee: ref_locktimeFee.current?.value,
+      collectionAddr: ref_collectionAddr.current?.value
     }
     executeUpdateConfig(nftInfo)
   }
@@ -148,11 +150,11 @@ export default function Admin() {
           <label className="font-bold">{lockNftCount}</label>
         </div>
         <div className="flex flex-col flex-wrap w-full gap-10 items-center lg:flex-row">
-          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={airdropAmount}/>
+          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={ref_airdropAmount}/>
           <AliensBtn onClick={handleAirdrop}>Airdrop</AliensBtn>
-          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={chargeAirdrop}/>
+          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={ref_chargeAirdrop}/>
           <AliensBtn onClick={handleChargeAirdrop}>Charge Airdrop</AliensBtn>
-          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={withdraw}/>
+          <input className="w-full lg:w-auto" type="text" placeholder="0inj" ref={ref_withdraw}/>
           <AliensBtn onClick={handleWithdraw}>Withdraw</AliensBtn>
         </div>
       </section>
@@ -160,23 +162,23 @@ export default function Admin() {
       <section className="config-info flex flex-col gap-5 mt-20">
         <div className="flex flex-row w-full gap-3">
           <span className="name">Duration:</span>
-          <input className="w-full" placeholder="0s" ref={duration}/>
+          <input className="w-full" placeholder="0s" ref={ref_duration}/>
         </div>
         <div className="flex flex-row w-full gap-3">
           <span className="name">Owner:</span>
-          <input className="w-full" ref={ownerAddr}/>
+          <input className="w-full" ref={ref_ownerAddr}/>
         </div>
         <div className="flex flex-row w-full gap-3">
           <span className="name">Fee address:</span>
-          <input className="w-full" ref={feeAddr}/>
+          <input className="w-full" ref={ref_feeAddr}/>
         </div>
         <div className="flex flex-row w-full gap-3">
           <span className="name">Unstake Fee:</span>
-          <input className="w-full" placeholder="0inj" ref={locktimeFee}/>
+          <input className="w-full" placeholder="0inj" ref={ref_locktimeFee}/>
         </div>
         <div className="flex flex-row w-full gap-3">
           <span className="name">Collection Address:</span>
-          <input className="w-full" ref={collectionAddr}/>
+          <input className="w-full" ref={ref_collectionAddr}/>
         </div>
         <div className="flex flex-row w-full justify-center">
           <AliensBtn onClick={handleUpdateConfig}>Update Config</AliensBtn>

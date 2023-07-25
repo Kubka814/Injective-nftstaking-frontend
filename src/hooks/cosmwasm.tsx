@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { connectKeplr } from '../services/keplr'
-
+// import { connectKeplr } from '../services/keplr'
+import {  connect, getAddresses } from '../services/wallet'
+import {  confirmCorrectKeplrAddress } from '../services/cosmos'
 import {
   Msgs,
   MsgSend,
@@ -15,9 +16,9 @@ import {
 
 import { toast } from 'react-toastify';
 
-import { BigNumber, BigNumberInBase, BigNumberInWei } from '@injectivelabs/utils';
+import { BigNumber, BigNumberInBase, BigNumberInWei, sleep } from '@injectivelabs/utils';
 import { Web3Exception } from '@injectivelabs/exceptions';
-import { MsgBroadcaster, WalletStrategy } from "@injectivelabs/wallet-ts";
+import { MsgBroadcaster, WalletStrategy, Wallet } from "@injectivelabs/wallet-ts";
 import { Network, getNetworkEndpoints } from "@injectivelabs/networks";
 
 const TEST_NETWORK = Network.TestnetK8s;
@@ -25,40 +26,41 @@ const TEST_ENDPOINTS = getNetworkEndpoints(TEST_NETWORK);
 const test_chainGrpcWasmApi = new ChainGrpcWasmApi(TEST_ENDPOINTS.grpc);
 const test_chainGrpcBankApi = new ChainGrpcBankApi(TEST_ENDPOINTS.grpc);
 
-const NETWORK = Network.MainnetK8s;
+const NETWORK = Network.Mainnet;
 const ENDPOINTS = getNetworkEndpoints(NETWORK);
 const chainGrpcWasmApi = new ChainGrpcWasmApi(ENDPOINTS.grpc);
 const indexerGrpcOracleApi = new IndexerGrpcOracleApi(ENDPOINTS.indexer);
 
-export interface ISigningCosmWasmClientContext {
+const tokenUris: Array<any> = []
+
+export interface ICosmWasmContext {
   injectiveAddress: string;
   ethereumAddress: string;
 
   loading: boolean,
   connectWallet: Function,
   disconnect: Function,
-
   getConfig: Function,
-  config: {
-    totalNfts: number,
-    totalStaked: number,
-    totalAirdrop: number,
-    lastTime: number,
-    currentTime: number,
-    duration: number,
-    owner: string,
-    collection: string,
-    locktimeFee: number,
-    feeAddr: string,
-    localTime: number,
-  },
-  isAdmin: boolean,
+
+  totalNfts: number,
+  totalStaked: number,
+  totalAirdrop: number,
+  lastTime: number,
+  currentTime: number,
+  duration: number,
+  owner: string,
+  collection: string,
+  locktimeFee: number,
+  feeAddr: string,
+  localTime: number,
 
   getTotalEarned: Function,
   totalEarned: number,
 
   getBalances: Function,
   nativeBalance: BigNumber,
+  loadingNfts: boolean,
+  setAccountNfts: Function,
   accountNfts: any,
 
   getUsdPrice: Function,
@@ -69,6 +71,7 @@ export interface ISigningCosmWasmClientContext {
   executeUnstake: Function,
   executeClaim: Function,
 
+  loadingStaked: boolean,
   getStakedNfts: Function,
   stakedNfts: any,
 
@@ -85,7 +88,7 @@ export interface ISigningCosmWasmClientContext {
   executeWithdraw: Function,
 }
 
-export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
+export const useCosmWasmValue = (): ICosmWasmContext => {
   const WALLET_TPYE_KEPLR = 0
   const WALLET_TYPE_METAMASK = 1
 
@@ -93,10 +96,10 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
   const [ethereumAddress, setEthereumAddress] = useState('')
 
   const [loading, setLoading] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  
+
   const [nativeBalance, setNativeBalance] = useState<BigNumber>(BigNumber(0))
-  const [accountNfts, setAccountNfts] = useState([])
+  const [accountNfts, setAccountNfts] = useState<Array<any>>([])
+  const [loadingNfts, setLoadingNfts] = useState(false)
   const [usdPrice, setUsdPrice] = useState<number>(1)
   const [totalEarned, setTotalEarned] = useState(0)
   
@@ -105,20 +108,20 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
   
   const [msgBroadcastClient, setMsgBroadcastClient] = useState<MsgBroadcaster>()
 
-  const [config, setConfig] = useState({ 
-    totalNfts: 0,
-    totalStaked: 0,
-    totalAirdrop: 0,
-    lastTime: 0,
-    currentTime: 0,
-    duration: 0,
-    owner: '',
-    collection: '',
-    locktimeFee: 0,
-    feeAddr: '',
-    localTime: 0,
-  })
+  const [totalNfts, setTotalNfts] = useState(0)
+  const [totalStaked, setTotalStaked] = useState(0)
+  const [totalAirdrop, setTotalAirdrop] = useState(0)
+  const [lastTime, setLastTime] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [owner, setOwner] = useState('')
+  const [collection, setCollection] = useState('')
+  const [locktimeFee, setLocktimeFee] = useState(0)
+  const [feeAddr, setFeeAddr] = useState('')
+  const [localTime, setLocalTime] = useState(0)
+
   const [stakedNfts, setStakedNfts] = useState([])
+  const [loadingStaked, setLoadingStaked] = useState(false)
   
   /***********    connect & disconnect wallet    **********/
   const connectWallet = async (walletType: number) => {
@@ -126,35 +129,41 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
 
     try {
       if (walletType == WALLET_TPYE_KEPLR) {
-        await connectKeplr()
+        const wallet: Wallet = Wallet.Keplr
+        await connect({ wallet })
         if (!(window as any).getOfflineSigner || !(window as any).keplr) {
           toast.error("Install keplr wallet")
           return
         }
         await (window as any).keplr.enable(import.meta.env.VITE_PUBLIC_CHAIN_ID)
-        
-        let walletStrategy = new WalletStrategy({
-          chainId: import.meta.env.VITE_PUBLIC_CHAIN_ID
-        });
-        setMsgBroadcastClient(new MsgBroadcaster({
-          walletStrategy,
-          network: TEST_NETWORK,
-        }));
+    
+        // let walletStrategy = new WalletStrategy({
+        //   chainId: import.meta.env.VITE_PUBLIC_CHAIN_ID
+        // });
+        // setMsgBroadcastClient(new MsgBroadcaster({
+        //   walletStrategy,
+        //   network: TEST_NETWORK,
+        // }));
 
-        const addresses = await walletStrategy.getAddresses();
-        if (addresses.length === 0) {
+        const injectiveAddresses = await getAddresses();
+        
+        if (injectiveAddresses.length === 0) {
           throw new Web3Exception(
             new Error("There are no addresses linked in this wallet.")
           );
         }
-        setEthereumAddress('')
-        setInjectiveAddress(addresses[0])
+        const [injectiveAddress] = injectiveAddresses
+        await confirmCorrectKeplrAddress(injectiveAddress)
 
-        setIsAdmin(addresses[0] == config.owner)
-        localStorage.setItem("address", addresses[0])
+        setEthereumAddress('')
+        setInjectiveAddress(injectiveAddress)
+
+        localStorage.setItem("address", injectiveAddress)
         localStorage.setItem("wallet_type", 'keplr')
 
       } else if (walletType == WALLET_TYPE_METAMASK) {
+        const wallet: Wallet = Wallet.Metamask
+        await connect({ wallet })
         if (!(window as any).ethereum) {
           toast.error("Install keplr metamask")
           return
@@ -163,30 +172,18 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: import.meta.env.VITE_PUBLIC_ETHEREUM_CHAIN_ID}],
         });
-
-        let walletStrategy = new WalletStrategy({
-          chainId: import.meta.env.VITE_PUBLIC_CHAIN_ID,
-          ethereumOptions: {
-            ethereumChainId: import.meta.env.VITE_PUBLIC_ETHEREUM_CHAIN_ID,
-            rpcUrl: import.meta.env.VITE_PUBLIC_ALCHEMY_RPC_ENDPOINT,
-          },
-        });
-        setMsgBroadcastClient(new MsgBroadcaster({
-          walletStrategy,
-          network: TEST_NETWORK,
-        }));
-
-        const addresses = await walletStrategy.getAddresses();
+        
+        const addresses = await getAddresses();
         if (addresses.length === 0) {
           throw new Web3Exception(
             new Error("There are no addresses linked in this wallet.")
           );
         }
-        setEthereumAddress(addresses[0])
-        setInjectiveAddress(getInjectiveAddress(addresses[0]))
+        const [address] = addresses
+        setEthereumAddress(address)
+        setInjectiveAddress(getInjectiveAddress(address))
 
-        setIsAdmin(addresses[0] == config.owner)
-        localStorage.setItem("address", addresses[0])
+        localStorage.setItem("address", address)
         localStorage.setItem("wallet_type", 'metamask')
       }
       
@@ -198,7 +195,6 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
 
   const disconnect = () => {
     localStorage.removeItem("address")
-    setIsAdmin(false)
     setInjectiveAddress('')
     setStakedNfts([])
     setAccountNfts([])
@@ -220,8 +216,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
   }
 
   /******* Get Account Balances *******/
-  const getBalances = async () => {
-    setLoading(true)
+  const getBalances = async (reload: boolean) => {
+    
+    if (loadingNfts || injectiveAddress.length == 0) return
+
+    setLoadingNfts(true)
     try {
       const balance = await test_chainGrpcBankApi.fetchBalance({
         accountAddress: injectiveAddress, 
@@ -229,44 +228,100 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       })
       setNativeBalance(new BigNumberInWei(balance.amount).toBase())
 
-      const response:any = await test_chainGrpcWasmApi.fetchSmartContractState(
-        import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
-        toBase64({
-          tokens: {
-            owner: injectiveAddress,
-            start_after: '0',
-            limit: 30
-          }
-        })
-      );
-
-      if (response) {
-        const result = fromBase64(response.data)
+      if (reload) {
         const nftsArray:any = []
-        await Promise.all(result.tokens.map(async (token_id:string) => {
-          let reponse_nftInfo:any = await test_chainGrpcWasmApi.fetchSmartContractState(
+        let start_after:string = '0'
+        while (1) {
+          const response:any = await test_chainGrpcWasmApi.fetchSmartContractState(
             import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
             toBase64({
-              all_nft_info: {
-                "token_id": token_id
+              tokens: {
+                owner: injectiveAddress,
+                start_after: start_after,
+                limit: 30
               }
             })
           );
-          const nftInfo = fromBase64(reponse_nftInfo.data)
-          nftsArray.push({token_id: token_id, nft_info: nftInfo})
-        }));
-        setAccountNfts(nftsArray)
-      }
+          if (response) {
+            const result = fromBase64(response.data)
+            if (result.tokens.length == 0) break
+            result.tokens.forEach((token_id: string) => {
+              nftsArray.push({token_id: token_id, nft_info: {token_uri: ''}})
+              start_after = token_id
+            })
+          }else{
+            break
+          }
+        }
+        let diff = false
+        if (accountNfts.length == nftsArray.length){
+          for (let index = 0; index < nftsArray.length; ++index) {
+            if (accountNfts[index].token_id != nftsArray[index].token_id){
+              diff = true
+              break
+            }
+          }
+          if (!diff){
+            setLoadingNfts(false)
+            return
+          }
+        }
 
-      setLoading(false)
+        let load_count = 0
+        let currentTime = new Date()
+        let start = currentTime.getTime()
+        for (let index = 0; index < nftsArray.length; ++index) {
+          // let exist = tokenUris.findIndex((token: any) => {
+          //   return (token.token_id == nftsArray[index].token_id)
+          // })
+          // if (exist < 0) {
+            /* let response_nft:any = await test_chainGrpcWasmApi.fetchSmartContractState(
+              import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
+              toBase64({
+                all_nft_info: {
+                  "token_id": nftsArray[index].token_id
+                }
+              })
+            )
+            if (response_nft) {
+              const nftInfo = fromBase64(response_nft.data)
+              nftsArray[index].nft_info.token_uri = nftInfo.info.token_uri
+              tokenUris.push({token_id: nftsArray[index].token_id, token_uri: nftInfo.info.token_uri})
+            } */
+            test_chainGrpcWasmApi.fetchSmartContractState(
+              import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
+              toBase64({
+                all_nft_info: {
+                  "token_id": nftsArray[index].token_id
+                }
+              })
+            ).then((response_nft: any) => {
+              const nftInfo = fromBase64(response_nft.data)
+              nftsArray[index].nft_info.token_uri = nftInfo.info.token_uri
+              //tokenUris.push({token_id: nftsArray[index].token_id, token_uri: nftInfo.info.token_uri})
+              load_count ++
+              
+              if (load_count == nftsArray.length){
+                setAccountNfts(nftsArray)
+                currentTime = new Date()
+                setLoadingNfts(false)
+                let end = currentTime.getTime()
+                console.log(`elapsed time: ${end-start}`)
+              }
+              console.log(load_count);
+            })
+          // } else {
+          //   nftsArray[index].nft_info.token_uri = tokenUris[exist].token_uri
+          //   load_count ++
+          // }
+        }
+      }
     } catch (error) {
-      setLoading(false)
     }
   }
 
   /******* Get Total Earned *******/
   const getTotalEarned = async () => {
-    setLoading(true)
     try {
       const response:any = await test_chainGrpcWasmApi.fetchSmartContractState(
         import.meta.env.VITE_PUBLIC_STAKING_CONTRACT, 
@@ -282,12 +337,10 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       }
     } catch (error) {
     }
-    setLoading(false)
   }
 
   /******* Get Airdropable Amount *******/
   const getAirdropableAmount = async () => {
-    setLoading(true)
     try {
       const balance = await test_chainGrpcBankApi.fetchBalance({
         accountAddress: import.meta.env.VITE_PUBLIC_STAKING_CONTRACT, 
@@ -296,12 +349,10 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       setAirdropableAmount(new BigNumberInWei(balance.amount).toBase())
     } catch (error) {
     }
-    setLoading(false)
   }
 
   /******* Get Airdropable Amount *******/
   const getLockNftCount = async () => {
-    setLoading(true)
     try {
       const response: any = await test_chainGrpcWasmApi.fetchSmartContractState(
         import.meta.env.VITE_PUBLIC_STAKING_CONTRACT,
@@ -315,73 +366,56 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       }
     } catch (error) {
     }
-    setLoading(false)
   }
 
   /******* Get Config *******/
   const getConfig = async () => {
-    setLoading(true)
     try {
-      let load = {
-        totalNfts: 0,
-        totalStaked: 0,
-        totalAirdrop: 0,
-        lastTime: 0,
-        currentTime: 0,
-        duration: 0,
-        owner: '',
-        collection: '',
-        locktimeFee: 0,
-        feeAddr: '',
-        localTime: 0,
-      }
-      
-      let response: any = await test_chainGrpcWasmApi.fetchSmartContractState(
+      const response:any = await test_chainGrpcWasmApi.fetchSmartContractState(
         import.meta.env.VITE_PUBLIC_STAKING_CONTRACT,
         toBase64({ 
           get_config: {} 
         })
-      );
+      )
 
       if (response) {
         const result = fromBase64(response.data)
-        load.collection = result.collection_address
-        load.currentTime = result.current_time
-        load.duration = result.duration
-        load.lastTime = result.last_airdrop_time
-        load.owner = result.owner
-        load.totalStaked = parseInt(result.total_staked)
-        load.totalAirdrop =  new BigNumberInWei(result.total_airdrop).toBase().toNumber()
-        load.locktimeFee = new BigNumberInWei(result.locktime_fee).toBase().toNumber()
-        load.feeAddr = result.fee_address
 
-        setIsAdmin(load.owner == injectiveAddress)
+        setCollection(result.collection_address)
+        setCurrentTime(result.current_time)
+        setDuration(result.duration)
+        setLastTime(result.last_airdrop_time)
+        setOwner(result.owner)
+        setTotalStaked(parseInt(result.total_staked))
+        setTotalAirdrop( new BigNumberInWei(result.total_airdrop).toBase().toNumber())
+        setLocktimeFee(new BigNumberInWei(result.locktime_fee).toBase().toNumber())
+        setFeeAddr(result.fee_address)
+        setLocalTime(Math.floor(Date.now()/1000))
+
       }
+    } catch (error) {
+      console.log(false, `Get Config error : ${error}`)
+    }
 
-      response = await chainGrpcWasmApi.fetchSmartContractState(
+    try {
+      const response:any = await chainGrpcWasmApi.fetchSmartContractState(
         import.meta.env.VITE_PUBLIC_ALIEN_COLLECTION,
         toBase64({ 
           num_tokens: {} 
         })
-      );
-
+      )
       if (response) {
         const result = fromBase64(response.data)
-        load.totalNfts = result.count
+        setTotalNfts(result.count)
       }
-      load.localTime = Math.floor(Date.now() / 1000)
-
-      setConfig(load)
     } catch (error) {
-      console.log(false, `getConfig error : ${error}`)
+      console.log(false, `Get Config error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Stake Nft Token *******/
   const executeStake = async (nft_ids:Array<string>) => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (injectiveAddress.length == 0) return
     try {
       const msgs = new Array<Msgs>
 
@@ -414,7 +448,7 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       }); 
 
       if (result && result.txHash) {
-        getBalances()
+        getBalances(true)
         getStakedNfts()
         toast.success("Stake Successed")
       }
@@ -422,13 +456,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       toast.error("Stake Failed")
       console.log(false, `Stake Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Stake Nft Token *******/
   const executeRestake = async (nft_id:string) => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (injectiveAddress.length == 0) return
     try {
       const msg = MsgExecuteContractCompat.fromJSON({
         sender: injectiveAddress,
@@ -453,13 +485,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
     } catch (error) {
       console.log(false, `Restake Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Claim Nft Token *******/
   const executeClaim = async (nft_ids:Array<string>) => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (injectiveAddress.length == 0) return
     try {
       const msgs = new Array<Msgs>
       nft_ids.map((nft_id) => {
@@ -481,14 +511,12 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       }); 
       
       if (result && result.txHash) {
-        getBalances()
+        getBalances(false)
         getStakedNfts()
         getTotalEarned()
         toast.success("Claim Successed")
       }
-      setLoading(false)
     } catch (error) {
-      setLoading(false)
       console.log(false, `Claim Error : ${error}`)
       toast.error("Claim Failed")
     }
@@ -496,16 +524,15 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
 
   /******* Execute UnStake Nft Token *******/
   const executeUnstake = async (nft_ids:Array<string>) => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (injectiveAddress.length == 0) return
     try {
       const msgs = new Array<Msgs>
       nft_ids.map((nft_id) => {
         let nftinfo: any = stakedNfts.find((nft:any) => (nft.token_id == nft_id))
         if (!nftinfo) return
         let feeAmount = '0'
-        if (nftinfo.lock_time > config.currentTime && config.locktimeFee) {
-          feeAmount = new BigNumberInBase(config.locktimeFee).toWei().toFixed()
+        if (nftinfo.lock_time > currentTime && locktimeFee) {
+          feeAmount = new BigNumberInBase(locktimeFee).toWei().toFixed()
         }
 
         const msg = MsgExecuteContractCompat.fromJSON({
@@ -530,7 +557,7 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       }); 
      
       if (result && result.txHash) {
-        getBalances()
+        getBalances(true)
         getStakedNfts()
         toast.success("Unstake Successed")
       }
@@ -538,13 +565,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       toast.error("Unstake Failed")
       console.log(false, `UnStake Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Airdrop *******/
   const executeAirdrop = async (amount:number) => {
-    if (loading == true || injectiveAddress.length == 0 || !isAdmin) return
-    setLoading(true)
+    if (injectiveAddress.length == 0 || (injectiveAddress != owner)) return
     try {
       const msg = MsgExecuteContractCompat.fromJSON({
         sender: injectiveAddress,
@@ -570,13 +595,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       toast.error("Airdrop Failed")
       console.log(false, `Airdrop  Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Update Config Token *******/
   const executeAirdropRestart = async () => {
-    if (loading == true || injectiveAddress.length == 0 || !isAdmin) return
-    setLoading(true)
+    if (injectiveAddress.length == 0 ||  (injectiveAddress != owner)) return
     try {
       const msg = MsgExecuteContractCompat.fromJSON({
         sender: injectiveAddress,
@@ -600,13 +623,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       toast.error("Airdrop Restart Failed")
       console.log(false, `Airdrop Restart Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Update Config *******/
   const executeUpdateConfig = async (updateInfo:any) => {
-    if (loading == true || injectiveAddress.length == 0 || !isAdmin) return
-    setLoading(true)
+    if (injectiveAddress.length == 0 ||  (injectiveAddress != owner)) return
     try {
       const msg = MsgExecuteContractCompat.fromJSON({
         sender: injectiveAddress,
@@ -635,13 +656,11 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
       toast.error("UpdateConfig Failed")
       console.log(false, `UpdateConfig Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Withdraw *******/
   const executeWithdraw = async (amount:number) => {
-    if (loading == true || injectiveAddress.length == 0 || !isAdmin) return
-    setLoading(true)
+    if (injectiveAddress.length == 0 ||  (injectiveAddress != owner)) return
     try {
       const msg = MsgExecuteContractCompat.fromJSON({
         sender: injectiveAddress,
@@ -660,20 +679,18 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
 
       if (result && result.txHash) {
         toast.success("Withdraw successed")
-        getBalances()
+        getBalances(false)
         getAirdropableAmount()
       }
     } catch (error) {
       toast.error("Withdraw Failed")
       console.log(false, `UpdateConfig Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /******* Execute Charge Airdrop *******/
   const executeCharge = async (amount:number) => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (injectiveAddress.length == 0) return
     try {
       const msg = MsgSend.fromJSON({
         srcInjectiveAddress: injectiveAddress,
@@ -691,20 +708,19 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
      
       if (result && result.txHash) {
         toast.success("Charge Airdrop Successed")
-        getBalances()
+        getBalances(false)
         getAirdropableAmount()
       }
     } catch (error) {
       toast.error("Charge Airdrop Failed")
       console.log(false, `Charge Airdrop Error : ${error}`)
     }
-    setLoading(false)
   }
 
   /*********    Get Staked NFTs    ************/
   const getStakedNfts = async () => {
-    if (loading == true || injectiveAddress.length == 0) return
-    setLoading(true)
+    if (loadingStaked == true || injectiveAddress.length == 0) return
+    setLoadingStaked(true)
     try {
       const response:any = await test_chainGrpcWasmApi.fetchSmartContractState(
         import.meta.env.VITE_PUBLIC_STAKING_CONTRACT, 
@@ -715,34 +731,49 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
         })
       )
 
+      const nftsArray:any = []
       if (response) {
         const result = fromBase64(response.data)
-        const nftsArray:any = []
-        await Promise.all(result.nft_maps.map(async (nft:any) => {
-          const response_nftInfo:any = await test_chainGrpcWasmApi.fetchSmartContractState(
-            import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
-            toBase64({
-              all_nft_info: {
-                "token_id": nft.nft_id
-              }
-            })
-          )
-          if (response_nftInfo) {
-            const nftInfo = fromBase64(response_nftInfo.data)
-            nftsArray.push({
-              token_id: nft.nft_id, 
-              lock_time: nft.lock_time,
-              airdrop: new BigNumberInWei(nft.airdrop).toBase(), 
-              nft_info: nftInfo
-            })
+        result.nft_maps.forEach((nft: any) => {
+          nftsArray.push({
+            token_id: nft.nft_id, 
+            lock_time: nft.lock_time,
+            airdrop: new BigNumberInWei(nft.airdrop).toBase(), 
+            nft_info: {
+              token_uri: ''
+            }
+          })
+        })
+
+        for (let index = 0; index < nftsArray.length; ++index) {
+          let exist = tokenUris.findIndex((token: any) => {
+            return (token.token_id == nftsArray[index].token_id)
+          })
+
+          if (exist < 0) {
+            let response_nft:any = await test_chainGrpcWasmApi.fetchSmartContractState(
+              import.meta.env.VITE_PUBLIC_COLLECTION_CONTRACT, 
+              toBase64({
+                all_nft_info: {
+                  "token_id": nftsArray[index].token_id
+                }
+              })
+            )
+            if (response_nft) {
+              const nftInfo = fromBase64(response_nft.data)
+              nftsArray[index].nft_info.token_uri = nftInfo.info.token_uri
+              tokenUris.push({token_id: nftsArray[index].token_id, token_uri: nftInfo.info.token_uri})
+            }
+          } else {
+            nftsArray[index].nft_info.token_uri = tokenUris[exist].token_uri
           }
-        }));
+        }
+
         setStakedNfts(nftsArray)
       }
     } catch (error) {
-      // console.log(false, `GetStakedNfts Error : ${error}`)
     }
-    setLoading(false)
+    setLoadingStaked(false)
   }
 
   return {
@@ -752,14 +783,26 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
     connectWallet,
     disconnect,
     getConfig,
-    config,
-    isAdmin,
+
+    totalNfts,
+    totalStaked,
+    totalAirdrop,
+    lastTime,
+    currentTime,
+    duration,
+    owner,
+    collection,
+    locktimeFee,
+    feeAddr,
+    localTime,
 
     getTotalEarned,
     totalEarned,
 
     getBalances,
     nativeBalance,
+    setAccountNfts,
+    loadingNfts,
     accountNfts,
 
     getUsdPrice,
@@ -771,6 +814,7 @@ export const useSigningCosmWasmClient = (): ISigningCosmWasmClientContext => {
     executeClaim,
 
     getStakedNfts,
+    loadingStaked,
     stakedNfts,
 
     getAirdropableAmount,

@@ -21,7 +21,7 @@ export default function NFTCard({
   const [imageUrl, setImageUrl] = useState("");
 
   const loadImage = async () => {
-    const token_uri = data.nft_info.info.token_uri
+    const token_uri = data.nft_info.token_uri
     if (!token_uri) return
     const uri: string = token_uri.replace("ipfs://", "https://ipfs.io/ipfs/");
     const response = await fetch(uri);

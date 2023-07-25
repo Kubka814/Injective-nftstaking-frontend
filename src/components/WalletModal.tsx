@@ -1,4 +1,4 @@
-import { useSigningClient } from "../context/CosmwasmContext"
+import { useCosmWasmContext } from "../context/CosmwasmContext"
 import MetaMask from "../assets/icons/Metamask"
 import Keplr from "../assets/icons/Keplr"
 
@@ -12,7 +12,7 @@ export default function WalletModal({
 
   const {
     connectWallet,
-  } = useSigningClient()
+  } = useCosmWasmContext()
   
   const handleKeplr = () => {
     connectWallet(0)

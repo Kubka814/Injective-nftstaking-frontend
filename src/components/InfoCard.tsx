@@ -42,6 +42,7 @@ export default function InfoCard ({
     return `${num}${suffixes[suffixIndex]}`;
   }
 
+
   return (
     <div className="info-card flex flex-col">
       <CountUp {...countUpProps}>

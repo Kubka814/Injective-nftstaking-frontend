@@ -73,6 +73,10 @@
     svg {
       width: 16px;
     }
+
+    .disabled {
+      opacity: 0.5;
+    }
   }
 
   @media screen and (max-width: 768px){

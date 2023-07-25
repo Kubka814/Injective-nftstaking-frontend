@@ -10,7 +10,7 @@ import IMG_LINK2 from "../assets/images/injective.png"
 import IMG_LINK3 from "../assets/images/medium.png"
 import IMG_LINK4 from "../assets/images/discord.png"
 
-import { useSigningClient } from "../context/CosmwasmContext";
+import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl } from "../utils/utils";
 import WalletModal from "../components/WalletModal";
 
@@ -21,10 +21,12 @@ export default function Home() {
     injectiveAddress, 
     connectWallet, 
     getConfig,
-    config,
     getUsdPrice,
-    usdPrice
-  } = useSigningClient()
+    totalNfts,
+    totalStaked,
+    totalAirdrop,
+    usdPrice,
+  } = useCosmWasmContext()
 
   useEffect(() => {
     let walletType = localStorage.getItem("wallet_type")
@@ -65,15 +67,15 @@ export default function Home() {
 
       <section className="staking-info flex flex-row w-full">
         <InfoCard
-          value={config.totalNfts}
+          value={totalNfts}
           label={"NFTs"}
           />
         <InfoCard
-          value={config.totalStaked}
+          value={totalStaked}
           label={"Staked"}
           />
         <InfoCard
-          value={config.totalAirdrop}
+          value={totalAirdrop * usdPrice}
           label={"Total"}
           isUsd={true}
           />

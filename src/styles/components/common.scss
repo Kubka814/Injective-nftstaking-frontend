@@ -87,8 +87,9 @@
   }
   .fill-bar {
     transition: width 2s;
-    width: 0;
+    width: 50%;
     height: 100%;
+    min-width: 20px;
     flex-shrink: 0;
     border-radius: 20px 0px;
     background: #47BDFF;
@@ -172,6 +173,10 @@
   .airdrop-progress {
     font-size: 12px;
     height: 24px;
+    .fill-bar {
+      min-width: 10px;
+      border-radius: 10px 0px;
+    }
   }
 
   .nft-card {

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-toastify"
 import DEFAULT_IMG from "../assets/images/empty-nft.png"
-import { useSigningClient } from "../context/CosmwasmContext"
+import { useCosmWasmContext } from "../context/CosmwasmContext"
 import { getDays, getHours, getMinutes, getSeconds } from "../utils/utils"
 import Injective from "../assets/icons/Injective"
+import { useResponsiveView } from "../hooks/reponsive"
 
 export default function NFTDetailRow ({
   data,
@@ -11,15 +12,18 @@ export default function NFTDetailRow ({
   data: any,
 }) {
 
+  const responseive_md = useResponsiveView(1024)
+
   const { 
-    config ,
+    duration,
+    currentTime,
     executeRestake,
     executeUnstake,
     executeClaim,
-  } = useSigningClient()
+  } = useCosmWasmContext()
 
   const getStakedTime = () => {
-    const stakedTime = config.currentTime + config.duration - data.lock_time
+    const stakedTime = currentTime + duration - data.lock_time
 
     if (getDays(stakedTime)>0) return `${getDays(stakedTime)} days`
     if (getHours(stakedTime)>0) return `${getHours(stakedTime)} hours`
@@ -28,7 +32,7 @@ export default function NFTDetailRow ({
   }
 
   const getUnlockTime = () => {
-    const current = config.currentTime
+    const current = currentTime
     const unlockTime = data.lock_time - current
 
     if (getDays(unlockTime)>0) return `${getDays(unlockTime)} days left`
@@ -38,11 +42,12 @@ export default function NFTDetailRow ({
   }
 
   const handleRestake = () => {
+    if (data.lock_time > currentTime) return
     executeRestake(data.token_id)
   }
 
   const handleUnstake = () => {
-    if (data.lock_time > config.currentTime)
+    if (data.lock_time > currentTime)
       toast.info("You have to pay fee to unstake nft in lock time.")
     executeUnstake([data.token_id])
   }
@@ -50,8 +55,6 @@ export default function NFTDetailRow ({
   const handleClaim = () => {
     if (parseInt(data.airdrop) > 0) {
       executeClaim([data.token_id])
-    } else {
-      toast.info("No airdrop amount.")
     }
   }
 
@@ -60,7 +63,7 @@ export default function NFTDetailRow ({
   const [imageUrl, setImageUrl] = useState("");
 
   const loadImage = async () => {
-    const token_uri = data.nft_info.info.token_uri
+    const token_uri = data.nft_info.token_uri
     if (!token_uri) return
     const uri: string = token_uri.replace("ipfs://", "https://ipfs.io/ipfs/");
     const response = await fetch(uri);
@@ -99,34 +102,34 @@ export default function NFTDetailRow ({
       </div>
       <div className="nft-id flex flex-col justify-center">
         <span>{title}</span>
-        {data.lock_time<config.currentTime && 
-        <span className="aliens-font3 lg:hidden" onClick={handleRestake}>
+        {responseive_md &&
+        <span className={"aliens-font3 " + (data.lock_time>currentTime?" disabled":"")} onClick={handleRestake}>
           Restake
         </span>}
       </div>
       <div className="staked-day flex flex-col justify-center">
         <span>{getStakedTime()}</span>
-        <span className="aliens-font3 lg:hidden" onClick={handleUnstake}>
+        {responseive_md &&
+        <span className="aliens-font3 " onClick={handleUnstake}>
           Unstake
-        </span>
+        </span>}
       </div>
       <div className="until-day flex flex-col justify-center">
         <span>{getUnlockTime()}</span>
-        {data.airdrop > 0 && (
-        <span className="aliens-font3 flex flex-row items-center lg:hidden" onClick={handleClaim}>
+        {responseive_md &&
+        <span className={"aliens-font3 flex flex-row items-center " + (data.airdrop==0?" disabled":"")} onClick={handleClaim}>
           Claim({data.airdrop.toNumber()}<Injective className="mx-1"/>)
-        </span>)}
+        </span>}
       </div>
       <div className="actions flex flex-row justify-center gap-10 flex-grow hidden lg:flex">
-        {data.lock_time<config.currentTime && 
-        <span className="aliens-font3" onClick={handleRestake}>
+        <span className={"aliens-font3" + (data.lock_time>currentTime?" disable disabled":"")} onClick={handleRestake}>
           Restake
-        </span>}
+        </span>
         <span className="aliens-font3" onClick={handleUnstake}>
           Unstake
         </span>
-        <span className="aliens-font3 flex flex-row items-center justify-center" onClick={handleClaim}>
-          Claim({data.airdrop.toNumber()}inj)
+        <span className={"aliens-font3 flex flex-row items-center justify-center" + (data.airdrop==0?" disabled":"")} onClick={handleClaim}>
+          Claim({data.airdrop.toNumber()}<Injective className="mx-1"/>)
         </span>
       </div>
     </div>

@@ -6,7 +6,7 @@ import AirdropProgress from "../components/AirdropProgress";
 import NFTDetailRow from "../components/NFTDetailRow";
 import TITLE_BG from "../assets/images/top-title.png"
 
-import { useSigningClient } from "../context/CosmwasmContext";
+import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl, copyClipboard } from "../utils/utils";
 import { BigNumber } from "@injectivelabs/utils";
 
@@ -14,7 +14,7 @@ export default function Details() {
   const navigate = useNavigate()
 
   const { 
-    isAdmin,
+    owner,
     injectiveAddress, 
     nativeBalance,
     disconnect, 
@@ -23,16 +23,15 @@ export default function Details() {
     getConfig,
     totalEarned,
     stakedNfts,
-  } = useSigningClient()
+  } = useCosmWasmContext()
 
   const handleDisconnect = () => {
-    console.log("Disconnectting to Keplr Wallet...")
     disconnect();
     navigate("/")
   }
 
   useEffect(() => {
-    getBalances()
+    getBalances(false)
     getStakedNfts()
     getConfig()
     if (injectiveAddress.length === 0)
@@ -64,7 +63,7 @@ export default function Details() {
             {showUserInfo(injectiveAddress, nativeBalance)}
           </span>
           <div className="aliens-font3 ml-5 text-16" onClick={handleDisconnect}>Disconnect</div>
-          {isAdmin && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
+          {(injectiveAddress == owner) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
         </div>
       </section>
 
