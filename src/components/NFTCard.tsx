@@ -21,25 +21,25 @@ export default function NFTCard({
   const [imageUrl, setImageUrl] = useState("");
 
   const loadImage = async () => {
-    const token_uri = data.nft_info.token_uri
+    const token_uri = data.token_uri
     if (!token_uri) return
     const uri: string = token_uri.replace("ipfs://", "https://ipfs.io/ipfs/");
     const response = await fetch(uri);
     const metadata = await response.json();
     setTitle(metadata.title);
-    const imageUrl = metadata.media.replace("ipfs://", "https://ipfs.io/ipfs/");
+    let imageUrl = `/nfts/${data.token_id}.png`
+    let image = new Image()
+    image.src =imageUrl
 
-    try {
-      const response = await fetch(imageUrl);
-  
-      if (!response.ok) {
-        throw new Error(`Failed to load image from ${imageUrl}`);
-      }
-    
+    image.onload = () => {
       setImageUrl(imageUrl);
       setLoaded(true)
-    } catch (error) {
-      console.error("An error occurred while loading the image:", error);
+    }
+
+    image.onerror = () => {
+      imageUrl = metadata.media.replace("ipfs://", "https://ipfs.io/ipfs/");
+      setImageUrl(imageUrl);
+      setLoaded(true)
     }
   };
 
@@ -60,9 +60,9 @@ export default function NFTCard({
         <></>
       )}
       {type === NORMAL_NFT && (
-        <div className="nft-inner flex flex-col items-center" onClick={() => onClick(data.token_id, data.airdrop?.toNumber())}>
+        <div className="nft-inner flex flex-col items-center" onClick={() => onClick(data.token_id, data.airdrop)}>
           { isLoaded ? (
-            <img className="nft-img" src={imageUrl}/>
+            <img className="nft-img" loading="lazy" src={imageUrl}/>
           ) : (
             <img className="nft-img" src={DEFAULT_IMG}/>
           ) }

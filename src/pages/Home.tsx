@@ -10,39 +10,28 @@ import IMG_LINK2 from "../assets/images/injective.png"
 import IMG_LINK3 from "../assets/images/medium.png"
 import IMG_LINK4 from "../assets/images/discord.png"
 
-import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl } from "../utils/utils";
 import WalletModal from "../components/WalletModal";
 
+import { useAppStore } from "../store/app";
+import useWallet from "../hooks/useWallet";
+
 export default function Home() {
   const navigate = useNavigate();
-
-  const { 
-    injectiveAddress, 
-    connectWallet, 
-    getConfig,
-    getUsdPrice,
-    totalNfts,
-    totalStaked,
-    totalAirdrop,
-    usdPrice,
-  } = useCosmWasmContext()
+  const wallet = useWallet()
 
   useEffect(() => {
-    let walletType = localStorage.getItem("wallet_type")
-    let account = localStorage.getItem("address")
-    if (account != null && account.length > 0) {
-      connectWallet(walletType=='metamask')
-    }
-    getConfig()
-    getUsdPrice()
+    if (wallet)
+      navigate("/main")
+  }, [wallet, ])
+
+  const app = useAppStore((state:any) => (state))
+
+  useEffect(() => {
+    app.fetchUsdPrice()
+    app.fetchCollection()
+    app.fetchStakingContract()
   }, [])
-
-  useEffect(() => {
-    if (injectiveAddress.length === 0)
-      return
-    navigate("/main")
-  }, [injectiveAddress, ])
 
   const [walletOpen, setOpen] = useState<boolean>(false)
   const handleOpen = () => {
@@ -67,15 +56,15 @@ export default function Home() {
 
       <section className="staking-info flex flex-row w-full">
         <InfoCard
-          value={totalNfts}
+          value={app.totalNfts}
           label={"NFTs"}
           />
         <InfoCard
-          value={totalStaked}
+          value={app.totalStaked}
           label={"Staked"}
           />
         <InfoCard
-          value={totalAirdrop * usdPrice}
+          value={app.totalAirdrop * app.usdPrice}
           label={"Total"}
           isUsd={true}
           />

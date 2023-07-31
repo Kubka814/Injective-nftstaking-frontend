@@ -6,41 +6,30 @@ import AirdropProgress from "../components/AirdropProgress";
 import NFTDetailRow from "../components/NFTDetailRow";
 import TITLE_BG from "../assets/images/top-title.png"
 
-import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl, copyClipboard } from "../utils/utils";
-import { BigNumber } from "@injectivelabs/utils";
+import useWallet from "../hooks/useWallet";
+import { useShuttle } from "@delphi-labs/shuttle-react";
+import { useAccountStore } from "../store/account";
 
 export default function Details() {
   const navigate = useNavigate()
-
-  const { 
-    owner,
-    injectiveAddress, 
-    nativeBalance,
-    disconnect, 
-    getBalances,
-    getStakedNfts,
-    getConfig,
-    totalEarned,
-    stakedNfts,
-  } = useCosmWasmContext()
+  const wallet = useWallet()
+  const { disconnectWallet } = useShuttle()
+  const account = useAccountStore()
 
   const handleDisconnect = () => {
-    disconnect();
+    disconnectWallet(wallet)
     navigate("/")
   }
 
   useEffect(() => {
-    getBalances(false)
-    getStakedNfts()
-    getConfig()
-    if (injectiveAddress.length === 0)
+    if (!wallet)
       navigate("/")
   }, [])
 
-  const showUserInfo = (address: string, balance: BigNumber) => {
+  const showUserInfo = (address: string, balance: string) => {
     let res = address.substring(0,12) + "..." + address.substring(address.length - 6, address.length)
-    res += ` (${balance.toFixed(2)}inj)`
+    res += ` (${balance}inj)`
     return res
   }
 
@@ -59,18 +48,18 @@ export default function Details() {
           <img src={TITLE_BG}/>
         </div>
         <div className="wallet-info flex flex-row flex-wrap justify-center items-center w-[300px] lg:flex-nowrap">
-          <span className="address cursor-pointer" onClick={() => copyClipboard(injectiveAddress)}>
-            {showUserInfo(injectiveAddress, nativeBalance)}
+          <span className="address cursor-pointer" onClick={() => copyClipboard(account.address)}>
+            {showUserInfo(account.address, account.totalBalance)}
           </span>
           <div className="aliens-font3 ml-5 text-16" onClick={handleDisconnect}>Disconnect</div>
-          {(injectiveAddress == owner) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
+          {(account.isAdmin) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
         </div>
       </section>
 
       <section className="airdrop-info flex flex-col-reverse items-center lg:items-end justify-center my-14 gap-20 lg:flex-row w-full">
         <div className="total-earned flex flex-col gap-2 items-center lg:items-start">
           <span>Total Earned</span>
-          <span className="text-36 w-max">{totalEarned.toFixed(2)} Inj</span>
+          <span className="text-36 w-max">{account.totalEarned} INJ</span>
         </div>
         <div className="locktime-progress">
           <AirdropProgress />
@@ -89,7 +78,7 @@ export default function Details() {
         </div>
 
         <div className="body w-full">
-          {stakedNfts.map((nft: any) => (
+          {account.stakedNfts.map((nft: any) => (
             <NFTDetailRow
               key={nft.token_id}
               data={nft}

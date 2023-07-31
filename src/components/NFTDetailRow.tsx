@@ -1,60 +1,114 @@
 import { useEffect, useState } from "react"
 import { toast } from "react-toastify"
 import DEFAULT_IMG from "../assets/images/empty-nft.png"
-import { useCosmWasmContext } from "../context/CosmwasmContext"
 import { getDays, getHours, getMinutes, getSeconds } from "../utils/utils"
 import Injective from "../assets/icons/Injective"
-import { useResponsiveView } from "../hooks/reponsive"
+import { useResponsiveView } from "../hooks/useResponsiveView"
+import { useAppStore } from "../store/app"
+import { useShuttle } from "@delphi-labs/shuttle-react";
+import useWallet from "../hooks/useWallet";
+import { getRestakeMsg, getUnstakeMsg, getClaimMsg, getFeeEstimate } from "../utils/messages"
+import { useAccountStore } from "../store/account"
 
-export default function NFTDetailRow ({
+export default function NFTDetailRow({
   data,
 }: {
   data: any,
 }) {
 
   const responseive_md = useResponsiveView(1024)
+  const app = useAppStore((state) => state)
+  const account = useAccountStore((state) => state)
+  const { broadcast } = useShuttle()
+  const wallet = useWallet()
+  const { simulate } = useShuttle();
 
-  const { 
-    duration,
-    currentTime,
-    executeRestake,
-    executeUnstake,
-    executeClaim,
-  } = useCosmWasmContext()
 
   const getStakedTime = () => {
-    const stakedTime = currentTime + duration - data.lock_time
+    const stakedTime = app.currentTime + app.duration - data.lock_time
 
-    if (getDays(stakedTime)>0) return `${getDays(stakedTime)} days`
-    if (getHours(stakedTime)>0) return `${getHours(stakedTime)} hours`
-    if (getMinutes(stakedTime)>0) return `${getMinutes(stakedTime)} mins`
-    if (getSeconds(stakedTime)>0) return `${getSeconds(stakedTime)} seconds`
+    if (getDays(stakedTime) > 0) return `${getDays(stakedTime)} days`
+    if (getHours(stakedTime) > 0) return `${getHours(stakedTime)} hours`
+    if (getMinutes(stakedTime) > 0) return `${getMinutes(stakedTime)} mins`
+    if (getSeconds(stakedTime) > 0) return `${getSeconds(stakedTime)} seconds`
   }
 
   const getUnlockTime = () => {
-    const current = currentTime
+    const current = app.currentTime
     const unlockTime = data.lock_time - current
 
-    if (getDays(unlockTime)>0) return `${getDays(unlockTime)} days left`
-    if (getHours(unlockTime)>0) return `${getHours(unlockTime)} hours left`
-    if (getMinutes(unlockTime)>0) return `${getMinutes(unlockTime)} mins left`
-    if (getSeconds(unlockTime)>0) return `${getSeconds(unlockTime)} seconds left`
+    if (getDays(unlockTime) > 0) return `${getDays(unlockTime)} days left`
+    if (getHours(unlockTime) > 0) return `${getHours(unlockTime)} hours left`
+    if (getMinutes(unlockTime) > 0) return `${getMinutes(unlockTime)} mins left`
+    if (getSeconds(unlockTime) > 0) return `${getSeconds(unlockTime)} seconds left`
   }
 
-  const handleRestake = () => {
-    if (data.lock_time > currentTime) return
-    executeRestake(data.token_id)
+  const handleRestake = async () => {
+    if (data.lock_time > app.currentTime) return
+    const msg = getRestakeMsg(wallet, data.token_id)
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msg)
+    broadcast({
+      wallet,
+      messages: msg,
+      feeAmount: feeEstimate?.fee?.amount,
+      gasLimit: feeEstimate?.gasLimit,
+    })
+      .then(() => {
+        toast.success("Restake Successed")
+      })
+      .catch((error: any) => {
+        toast.success("Restake Failed")
+        console.log("Broadcast error", error)
+      })
   }
 
-  const handleUnstake = () => {
-    if (data.lock_time > currentTime)
+  const handleUnstake = async () => {
+    if (data.lock_time > app.currentTime)
       toast.info("You have to pay fee to unstake nft in lock time.")
-    executeUnstake([data.token_id])
+    const msg = getUnstakeMsg(wallet, account.stakedNfts, [data.token_id], app.currentTime, app.locktimeFee)
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msg)
+    broadcast({
+      wallet,
+      messages: msg,
+      feeAmount: feeEstimate?.fee?.amount,
+      gasLimit: feeEstimate?.gasLimit,
+    })
+      .then(() => {
+        account.addNft(data.token_id)
+        account.unstakeNft(data.token_id)
+        toast.success("Unstake Successed")
+      })
+      .catch((error: any) => {
+        toast.error("Unstake Failed")
+        console.log("Broadcast error", error)
+      })
+      .finally(() => {
+        account.fetchBalance()
+      })
   }
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
+    const msg = getClaimMsg(wallet, [data.token_id])
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msg)
     if (parseInt(data.airdrop) > 0) {
-      executeClaim([data.token_id])
+      broadcast({
+        wallet,
+        messages: msg,
+        feeAmount: feeEstimate?.fee?.amount,
+        gasLimit: feeEstimate?.gasLimit,
+      })
+        .then(() => {
+          toast.success("Claim Successed")
+          account.setAirdrop(data.token_id, 0)
+        })
+        .catch((error: any) => {
+          toast.error("Claim Failed")
+          console.log("Broadcast error", error)
+        })
+        .finally(() => {
+          account.fetchBalance()
+          account.fetchTotalEarned()
+        })
     }
   }
 
@@ -63,25 +117,25 @@ export default function NFTDetailRow ({
   const [imageUrl, setImageUrl] = useState("");
 
   const loadImage = async () => {
-    const token_uri = data.nft_info.token_uri
+    const token_uri = data.token_uri
     if (!token_uri) return
     const uri: string = token_uri.replace("ipfs://", "https://ipfs.io/ipfs/");
     const response = await fetch(uri);
     const metadata = await response.json();
     setTitle(metadata.title);
-    const imageUrl = metadata.media.replace("ipfs://", "https://ipfs.io/ipfs/");
+    let imageUrl = `/nfts/${data.token_id}.png`
+    let image = new Image()
+    image.src =imageUrl
 
-    try {
-      const response = await fetch(imageUrl);
-  
-      if (!response.ok) {
-        throw new Error(`Failed to load image from ${imageUrl}`);
-      }
-    
+    image.onload = () => {
       setImageUrl(imageUrl);
       setLoaded(true)
-    } catch (error) {
-      console.error("An error occurred while loading the image:", error);
+    }
+
+    image.onerror = () => {
+      imageUrl = metadata.media.replace("ipfs://", "https://ipfs.io/ipfs/");
+      setImageUrl(imageUrl);
+      setLoaded(true)
     }
   };
 
@@ -94,42 +148,42 @@ export default function NFTDetailRow ({
   return (
     <div className="nft-row flex flex-row items-center w-full">
       <div className="nft-img">
-        { isLoaded ? (
-          <img src={imageUrl}/>
+        {isLoaded ? (
+          <img src={imageUrl} />
         ) : (
-          <img src={DEFAULT_IMG}/>
-        ) }
+          <img src={DEFAULT_IMG} />
+        )}
       </div>
       <div className="nft-id flex flex-col justify-center">
         <span>{title}</span>
         {responseive_md &&
-        <span className={"aliens-font3 " + (data.lock_time>currentTime?" disabled":"")} onClick={handleRestake}>
-          Restake
-        </span>}
+          <span className={"aliens-font3 " + ((data.lock_time > app.currentTime) ? " disabled" : "")} onClick={handleRestake}>
+            Restake
+          </span>}
       </div>
       <div className="staked-day flex flex-col justify-center">
         <span>{getStakedTime()}</span>
         {responseive_md &&
-        <span className="aliens-font3 " onClick={handleUnstake}>
-          Unstake
-        </span>}
+          <span className="aliens-font3 " onClick={handleUnstake}>
+            Unstake
+          </span>}
       </div>
       <div className="until-day flex flex-col justify-center">
         <span>{getUnlockTime()}</span>
         {responseive_md &&
-        <span className={"aliens-font3 flex flex-row items-center " + (data.airdrop==0?" disabled":"")} onClick={handleClaim}>
-          Claim({data.airdrop.toNumber()}<Injective className="mx-1"/>)
-        </span>}
+          <span className={"aliens-font3 flex flex-row items-center " + (data.airdrop == 0 ? " disabled" : "")} onClick={handleClaim}>
+            Claim({data.airdrop}<Injective className="mx-1" />)
+          </span>}
       </div>
       <div className="actions flex flex-row justify-center gap-10 flex-grow hidden lg:flex">
-        <span className={"aliens-font3" + (data.lock_time>currentTime?" disable disabled":"")} onClick={handleRestake}>
+        <span className={"aliens-font3" + ((data.lock_time > app.currentTime) ? " disable disabled" : "")} onClick={handleRestake}>
           Restake
         </span>
         <span className="aliens-font3" onClick={handleUnstake}>
           Unstake
         </span>
-        <span className={"aliens-font3 flex flex-row items-center justify-center" + (data.airdrop==0?" disabled":"")} onClick={handleClaim}>
-          Claim({data.airdrop.toNumber()}<Injective className="mx-1"/>)
+        <span className={"aliens-font3 flex flex-row items-center justify-center" + (data.airdrop == 0 ? " disabled" : "")} onClick={handleClaim}>
+          Claim({data.airdrop}<Injective className="mx-1" />)
         </span>
       </div>
     </div>

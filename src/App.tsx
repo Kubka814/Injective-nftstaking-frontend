@@ -8,11 +8,11 @@ import Admin from "./pages/Admin"
 
 import "./App.css"
 import "react-toastify/dist/ReactToastify.min.css";
-import { useCosmWasmContext } from "./context/CosmwasmContext";
+import { useAppStore } from "./store/app";
 
 function App() {
 
-  const {loading} = useCosmWasmContext()
+  const loading = useAppStore((state) => (state.loading))
   
   return (
   <>

@@ -48,3 +48,7 @@ export const getMinutes = (seconds: number) => {
 export const getSeconds = (seconds: number) => {
   return (seconds % 60);
 }
+
+export const todayInSeconds = (): number => {
+  return Math.floor(Date.now() / 1000)
+}

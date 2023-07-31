@@ -13,50 +13,39 @@ import TITLE_BG from "../assets/images/top-title.png";
 import BTN_PREV from "../assets/icons/BtnPrev";
 import BTN_NEXT from "../assets/icons/BtnNext";
 
-import { useCosmWasmContext } from "../context/CosmwasmContext";
 import { changeBackgroundUrl, copyClipboard } from "../utils/utils";
-import { BigNumber } from "@injectivelabs/utils";
 import { toast } from "react-toastify";
 
-import LOADING from "../assets/images/loading.gif"
+import { useShuttle } from "@delphi-labs/shuttle-react";
+import useWallet from "../hooks/useWallet";
+import { useAccountStore } from "../store/account";
+import { useAppStore } from "../store/app";
+import {getStakeMsg, getUnstakeMsg, getClaimMsg, getFeeEstimate} from "../utils/messages";
 
 export default function Main() {
   const navigate = useNavigate()
-
-  const { 
-    owner,
-    injectiveAddress, 
-    nativeBalance,
-    disconnect, 
-    getConfig,
-    getBalances,
-    accountNfts,
-    totalEarned,
-    getTotalEarned,
-    executeStake,
-    executeUnstake,
-    executeClaim,
-    getStakedNfts,
-    stakedNfts,
-    loadingNfts,
-    loadingStaked,
-  } = useCosmWasmContext()
+  const {disconnectWallet, broadcast} = useShuttle()
+  const wallet = useWallet()
+  const account = useAccountStore((state) => state)
+  const app = useAppStore((state) => state)
+  const { simulate } = useShuttle();
 
   const handleDisconnect = () => {
-    disconnect();
+    disconnectWallet(wallet)
     navigate("/")
   }
 
   useEffect(() => {
-    if (injectiveAddress.length === 0) {
-        navigate("/")
-        return
+    if (!wallet) navigate("/")
+    else {
+      account.setAddress(wallet.account.address)
+      account.setIsAdmin(wallet.account.address == app.owner)
+      account.fetchBalance()
+      account.fetchTotalEarned()
+      account.fetchAccountNfts()
+      account.fetchStakedNfts()
     }
-    getConfig()
-    getTotalEarned()
-    getBalances(true)
-    getStakedNfts()
-  }, [injectiveAddress, ])
+  }, [])
 
   const [selectIds, setSelectIds] = useState<Array<string>>([])
   const insertSelectId = (id:string) => {
@@ -109,44 +98,104 @@ export default function Main() {
     let index = selectStakeIds.indexOf(nft_id)
     if (index < 0) {
       insertSelectStakeId(nft_id)
-      setClaimAmount((prev:number) => (prev + airdrop))
+      setClaimAmount((prev:number) => (Math.floor(prev) + Math.floor(airdrop)))
     } else {
       removeSelectStakeId(nft_id)
-      setClaimAmount((prev:number) => (prev - airdrop))
+      setClaimAmount((prev:number) => (Math.floor(prev) - Math.floor(airdrop)))
     }
   }
 
-  const handleStake = () => {
+  const handleStake = async () => {
     if (!selectIds.length) {
       toast.warn("Select NFTs in your wallet.")
       return
     }
-    executeStake(selectIds)
-    setSelectIds([])
+    const msgs = getStakeMsg(wallet, selectIds)
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msgs)
+    broadcast({
+      wallet,
+      messages: msgs,
+      feeAmount: feeEstimate?.fee?.amount,
+      gasLimit: feeEstimate?.gasLimit,
+    })
+      .then(() => {
+        selectIds.map((nft_id) => {
+          account.deleteNft(nft_id)
+          account.stakeNft(nft_id, (app.currentTime + app.duration))
+        })
+        toast.success("Stake Successed")
+        setSelectIds([])
+      })
+      .catch((error: any) => {
+        toast.error("Stake Failed")
+        console.log("Broadcast error", error)
+      })
   }
 
-  const handleUnstake = () => {
+  const handleUnstake = async () => {
     if (!selectStakeIds.length) {
       toast.warn("Select staked NFTs.")
       return
     }
-    executeUnstake(selectStakeIds)
-    setSelectStakeIds([])
+    const msg = getUnstakeMsg(wallet, account.stakedNfts, selectStakeIds, app.currentTime, app.locktimeFee)
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msg)
+    broadcast({
+      wallet,
+      messages: msg,
+      feeAmount: feeEstimate?.fee?.amount,
+      gasLimit: feeEstimate?.gasLimit,
+    })
+      .then(() => {
+        selectStakeIds.map((nft_id) => {
+          account.addNft(nft_id)
+          account.unstakeNft(nft_id)
+        })
+        toast.success("Unstake Successed")
+        setSelectStakeIds([])
+      })
+      .catch((error: any) => {
+        toast.error("Unstake Failed")
+        console.log("Broadcast error", error)
+      })
+      .finally(() => {
+        account.fetchBalance()
+      })
   }
 
-  const handleClaim = () => {
+  const handleClaim = async () => {
     if (!selectStakeIds.length || claimAmount == 0) {
       toast.warn("No claimable amount.")
       return
     }
-    executeClaim(selectStakeIds)
-    setSelectStakeIds([])
-    setClaimAmount(0)
+    const msg = getClaimMsg(wallet, selectStakeIds)
+    const feeEstimate: any = await getFeeEstimate(simulate, wallet, msg)
+    broadcast({
+      wallet,
+      messages: msg,
+      feeAmount: feeEstimate?.fee?.amount,
+      gasLimit: feeEstimate?.gasLimit,
+    })
+      .then(() => {
+        toast.success("Claim Successed")
+        selectStakeIds.forEach((tokenId) => {
+          account.setAirdrop(tokenId, 0)
+        })
+        setSelectStakeIds([])
+        setClaimAmount(0)
+      })
+      .catch((error: any) => {
+        toast.error("Claim Failed")
+        console.log("Broadcast error", error)
+      })
+      .finally(() => {
+        account.fetchBalance()
+        account.fetchTotalEarned()
+      })
   }
 
-  const showUserInfo = (address: string, balance: BigNumber) => {
+  const showUserInfo = (address: string, balance: string) => {
     let res = address.substring(0,12) + "..." + address.substring(address.length - 6, address.length)
-    res += ` (${balance.toFixed(2)}inj)`
+    res += ` (${balance}inj)`
     return res
   }
 
@@ -165,18 +214,18 @@ export default function Main() {
           <img src={TITLE_BG}/>
         </div>
         <div className="wallet-info flex flex-row flex-wrap justify-center items-center w-[300px] lg:flex-nowrap">
-          <span className="address cursor-pointer" onClick={() => copyClipboard(injectiveAddress)} title="Click to copy address to clipboard.">
-            {showUserInfo(injectiveAddress, nativeBalance)}
+          <span className="address cursor-pointer" onClick={() => copyClipboard(account.address)} title="Click to copy address to clipboard.">
+            {showUserInfo(account.address, account.totalBalance)}
             </span>
           <div className="aliens-font3 ml-5 text-16" onClick={handleDisconnect}>Disconnect</div>
-          {(injectiveAddress == owner) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
+          {(account.isAdmin) && <Link to="/admin" className="aliens-font3 ml-5 text-16">Airdrop</Link>}
         </div>
       </section>
 
       <section className="airdrop-info flex flex-col-reverse items-center lg:items-end justify-center my-14 gap-20 lg:flex-row w-full">
         <div className="total-earned flex flex-col gap-2 items-center lg:items-start">
           <span>Total Earned</span>
-          <span className="text-36 w-max">{totalEarned.toFixed(2)} Inj</span>
+          <span className="text-36 w-max">{account.totalEarned} INJ</span>
         </div>
         <div className="locktime-progress">
           <AirdropProgress />
@@ -186,28 +235,22 @@ export default function Main() {
       <section className="nft-infos flex flex-wrap justify-center lg:flex-nowrap">
         <section className="flex flex-col w-full items-center lg:pr-[50px] lg:w-1/2">
           <div className="flex flex-wrap w-full">
-            <span className="flex-grow">{accountNfts.length} NFTs in your wallet</span>
+            <span className="flex-grow">{account.accountNfts.length} NFTs in your wallet</span>
             <span className="font-bold hidden md:block">{selectIds.length} NFTs selected</span>
           </div>
-          <div className={("wallet-nfts flex flex-wrap mt-2" + (loadingNfts?" loading":""))}>
-            {loadingNfts ? (
-              <img src={LOADING}/>
-            ) : 
-              <>
-                <NFTCard
-                  type={BUY_NFT}/>
-                {accountNfts.map((nft:any) => (
-                  <NFTCard
-                    key={nft.token_id}
-                    data={nft}
-                    type={NORMAL_NFT}
-                    onClick={handleClickNft}
-                    isSelected={selectIds.indexOf(nft.token_id) >= 0}/>
-                ))}
-                {(accountNfts.length%3)>0 && (<NFTCard type={EMPTY_NFT}/>)}
-                {(accountNfts.length%3)>1 && (<NFTCard type={EMPTY_NFT}/>)}
-              </>
-            }
+          <div className={("wallet-nfts flex flex-wrap mt-2")}>
+            <NFTCard
+              type={BUY_NFT}/>
+            {account.accountNfts.map((nft:any) => (
+              <NFTCard
+                key={nft.token_id}
+                data={nft}
+                type={NORMAL_NFT}
+                onClick={handleClickNft}
+                isSelected={selectIds.indexOf(nft.token_id) >= 0}/>
+            ))}
+            {(account.accountNfts.length%3)>0 && (<NFTCard type={EMPTY_NFT}/>)}
+            {(account.accountNfts.length%3)>1 && (<NFTCard type={EMPTY_NFT}/>)}
           </div>
 
           <div className="aliens-divider w-1/2 lg:hidden"></div>
@@ -219,37 +262,31 @@ export default function Main() {
 
         <section className="flex flex-col items-center mt-40 w-full lg:px-[30px] lg:mt-0 lg:w-1/2">
           <div className="flex flex-wrap w-full">
-            <span className="flex-grow">{stakedNfts.length} NFTs staked</span>
+            <span className="flex-grow">{account.stakedNfts.length} NFTs staked</span>
             <span className="font-bold hidden md:block">{selectStakeIds.length} NFTs selected</span>
             <Link to="/details" className="aliens-font3 hidden lg:block ml-5">See Details</Link>
           </div>
 
           <div className="staked-nfts flex flex-row justify-center items-center gap-2 mt-5">
-            {loadingStaked ? (
-              <img src={LOADING}/>
-            ) : 
-              <>
-                <div className="btn-prev" onClick={handleBtnPrev}><BTN_PREV/></div>
-                <AliceCarousel
-                  autoWidth
-                  disableDotsControls
-                  disableButtonsControls
-                  mouseTracking={false}
-                  ref={carouselRef} >
-                  {stakedNfts.map((nft: any) => (
-                    <div className="staked-nft-items mx-2" key={nft.token_id}>
-                      <NFTCard 
-                        type={NORMAL_NFT} 
-                        data={nft} 
-                        onClick={handleClickStaked} 
-                        isSelected={selectStakeIds.indexOf(nft.token_id) >= 0}
-                        />
-                    </div>
-                  ))}
-                </AliceCarousel>
-                <div className="btn-next" onClick={handleBtnNext}><BTN_NEXT/></div>
-              </>
-            }
+            <div className="btn-prev" onClick={handleBtnPrev}><BTN_PREV/></div>
+            <AliceCarousel
+              autoWidth
+              disableDotsControls
+              disableButtonsControls
+              mouseTracking={false}
+              ref={carouselRef} >
+              {account.stakedNfts.map((nft: any) => (
+                <div className="staked-nft-items mx-2" key={nft.token_id}>
+                  <NFTCard 
+                    type={NORMAL_NFT} 
+                    data={nft} 
+                    onClick={handleClickStaked} 
+                    isSelected={selectStakeIds.indexOf(nft.token_id) >= 0}
+                    />
+                </div>
+              ))}
+            </AliceCarousel>
+            <div className="btn-next" onClick={handleBtnNext}><BTN_NEXT/></div>
           </div>
           
           <Link to="/details" className="aliens-font3 lg:hidden mt-20">See Details</Link>
